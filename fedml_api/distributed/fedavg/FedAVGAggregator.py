@@ -115,14 +115,15 @@ class FedAVGAggregator(object):
             train_num_samples = []
             train_tot_corrects = []
             train_losses = []
+            f1scores = []
             for client_idx in range(self.args.client_num_in_total):
                 # train data
                 metrics = self.trainer.test(self.train_data_local_dict[client_idx], self.device, self.args)
-                train_tot_correct, train_num_sample, train_loss = metrics['test_correct'], metrics['test_total'], metrics['test_loss']
+                train_tot_correct, train_num_sample, train_loss, f1score = metrics['test_correct'], metrics['test_total'], metrics['test_loss'], metrics['f1score']
                 train_tot_corrects.append(copy.deepcopy(train_tot_correct))
                 train_num_samples.append(copy.deepcopy(train_num_sample))
                 train_losses.append(copy.deepcopy(train_loss))
-
+                f1scores.append(f1score)
                 """
                 Note: CI environment is CPU-based computing. 
                 The training speed for RNN training is to slow in this setting, so we only test a client to make sure there is no programming error.
@@ -133,9 +134,11 @@ class FedAVGAggregator(object):
             # test on training dataset
             train_acc = sum(train_tot_corrects) / sum(train_num_samples)
             train_loss = sum(train_losses) / sum(train_num_samples)
+            train_f1score = sum(f1scores) /  sum(train_num_samples)
             wandb.log({"Train/Acc": train_acc, "round": round_idx})
             wandb.log({"Train/Loss": train_loss, "round": round_idx})
-            stats = {'training_acc': train_acc, 'training_loss': train_loss}
+            wandb.log({"Train/f1score": train_f1score, "round": round_idx})
+            stats = {'training_acc': train_acc, 'training_loss': train_loss, 'training_f1score': train_f1score}
             logging.info(stats)
 
             # test data
@@ -144,12 +147,12 @@ class FedAVGAggregator(object):
             test_losses = []
 
             if round_idx == self.args.comm_round - 1:
-                metrics = self.trainer.test(self.test_global, self.device, self.args)
+                metrics = self.trainer.test(self.test_global, self.device, self.args, save_model=True)
             else:
-                metrics = self.trainer.test(self.val_global, self.device, self.args)
+                metrics = self.trainer.test(self.val_global, self.device, self.args, save_model=True)
                 
-            test_tot_correct, test_num_sample, test_loss = metrics['test_correct'], metrics['test_total'], metrics[
-                'test_loss']
+            test_tot_correct, test_num_sample, test_loss, test_f1score = metrics['test_correct'], metrics['test_total'], metrics[
+                'test_loss'], metrics['f1score']
             test_tot_corrects.append(copy.deepcopy(test_tot_correct))
             test_num_samples.append(copy.deepcopy(test_num_sample))
             test_losses.append(copy.deepcopy(test_loss))
@@ -159,5 +162,6 @@ class FedAVGAggregator(object):
             test_loss = sum(test_losses) / sum(test_num_samples)
             wandb.log({"Test/Acc": test_acc, "round": round_idx})
             wandb.log({"Test/Loss": test_loss, "round": round_idx})
-            stats = {'test_acc': test_acc, 'test_loss': test_loss}
+            wandb.log({"Test/f1score": test_f1score, "round": round_idx})
+            stats = {'test_acc': test_acc, 'test_loss': test_loss, 'test_f1score': test_f1score}
             logging.info(stats)

@@ -13,6 +13,10 @@ import torch
 import wandb
 from mpi4py import MPI
 
+logging.basicConfig(
+        level=logging.INFO,
+        format='%(process)d %(asctime)s.%(msecs)03d - {%(filename)s.py (%(lineno)d)} - %(funcName)s(): %(message)s',
+        datefmt='%Y-%m-%d,%H:%M:%S')
 # add the FedML root directory to the python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "./../../../../")))
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "./../../../")))
@@ -28,6 +32,7 @@ from fedml_api.data_preprocessing.stackoverflow_nwp.data_loader import load_part
 from fedml_api.data_preprocessing.MNIST.data_loader import load_partition_data_mnist
 from fedml_api.data_preprocessing.ImageNet.data_loader import load_partition_data_ImageNet
 from fedml_api.data_preprocessing.Landmarks.data_loader import load_partition_data_landmarks
+from fedml_api.data_preprocessing.TILES.data_loader import load_partition_data_tiles
 
 from fedml_api.data_preprocessing.cifar10.data_loader import load_partition_data_cifar10
 from fedml_api.data_preprocessing.cifar100.data_loader import load_partition_data_cifar100
@@ -41,6 +46,7 @@ from fedml_api.model.nlp.rnn import RNN_OriginalFedAvg, RNN_StackOverFlow
 from fedml_api.model.linear.lr import LogisticRegression
 from fedml_api.model.cv.mobilenet_v3 import MobileNetV3
 from fedml_api.model.cv.efficientnet import EfficientNet
+from fedml_api.model.TILES.baseline_models import OneDCnnLstm
 
 from fedml_api.distributed.fedavg.FedAvgAPI import FedML_init, FedML_FedAvg_distributed
 
@@ -116,6 +122,8 @@ def add_args(parser):
 
     parser.add_argument('--ci', type=int, default=0,
                         help='CI')
+
+    parser.add_argument('--output_dir', type=str, default='/data/rash/tiles-motif/expts/')
     args = parser.parse_args()
     return args
 
@@ -208,7 +216,12 @@ def load_data(args, dataset_name):
                                                   fed_test_map_file=fed_test_map_file,
                                                   partition_method=None, partition_alpha=None,
                                                   client_number=args.client_num_in_total, batch_size=args.batch_size)
-
+        
+    elif dataset_name == "tiles":
+        logging.info("load_data. dataset_name = %s" % dataset_name)
+        train_data_num, test_data_num, train_data_global, test_data_global, \
+        train_data_local_num_dict, train_data_local_dict, test_data_local_dict, \
+        class_num = load_partition_data_tiles(batch_size=args.batch_size)
 
     else:
         if dataset_name == "cifar10":
@@ -263,6 +276,8 @@ def create_model(args, model_name, output_dim):
         model = MobileNetV3(model_mode='LARGE')
     elif model_name == 'efficientnet':
         model = EfficientNet()
+    elif model_name == 'onedcnnlstm':
+        model = OneDCnnLstm(input_channel=1, num_pred=4)
 
     return model
 
@@ -272,24 +287,31 @@ if __name__ == "__main__":
     if sys.platform == 'darwin':
         os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
+    # logging.basicConfig(
+    #     level=logging.INFO,
+    #     format='%(process)d %(asctime)s.%(msecs)03d - {%(filename)s.py (%(lineno)d)} - %(funcName)s(): %(message)s',
+    #     datefmt='%Y-%m-%d,%H:%M:%S')
+    
+
     # initialize distributed computing (MPI)
     comm, process_id, worker_number = FedML_init()
 
     # parse python script input parameters
     parser = argparse.ArgumentParser()
     args = add_args(parser)
-    logging.info(args)
+    logging.info(args)    
 
     # customize the process name
     str_process_name = "FedAvg (distributed):" + str(process_id)
     setproctitle.setproctitle(str_process_name)
 
     # customize the log format
+    
     # logging.basicConfig(level=logging.INFO,
-    logging.basicConfig(level=logging.DEBUG,
-                        format=str(
-                            process_id) + ' - %(asctime)s %(filename)s[line:%(lineno)d] %(levelname)s %(message)s',
-                        datefmt='%a, %d %b %Y %H:%M:%S')
+    # logging.basicConfig(level=logging.INFO,
+    #                     format=str(
+    #                         process_id) + ' - %(asctime)s %(filename)s[line:%(lineno)d] %(levelname)s %(message)s',
+    #                     datefmt='%a, %d %b %Y %H:%M:%S')
     hostname = socket.gethostname()
     logging.info("#############process ID = " + str(process_id) +
                  ", host name = " + hostname + "########" +
@@ -300,7 +322,7 @@ if __name__ == "__main__":
     if process_id == 0:
         wandb.init(
             # project="federated_nas",
-            project="fedml",
+            project="tiles_HAD",
             name="FedAVG(d)" + str(args.partition_method) + "r" + str(args.comm_round) + "-e" + str(
                 args.epochs) + "-lr" + str(
                 args.lr),
@@ -329,12 +351,12 @@ if __name__ == "__main__":
     # In this case, please use our FedML distributed version (./fedml_experiments/distributed_fedavg)
     model = create_model(args, model_name=args.model, output_dim=dataset[7])
 
-    # try:
+    try:
         # start "federated averaging (FedAvg)"
-    FedML_FedAvg_distributed(process_id, worker_number, device, comm,
-                             model, train_data_num, train_data_global, test_data_global,
-                             train_data_local_num_dict, train_data_local_dict, test_data_local_dict, args)
-    # except Exception as e:
-    #     print(e)
-    #     logging.info('traceback.format_exc():\n%s' % traceback.format_exc())
-    #     MPI.COMM_WORLD.Abort()
+        FedML_FedAvg_distributed(process_id, worker_number, device, comm,
+                                model, train_data_num, train_data_global, test_data_global,
+                                train_data_local_num_dict, train_data_local_dict, test_data_local_dict, args)
+    except Exception as e:
+        print(e)
+        logging.info('traceback.format_exc():\n%s' % traceback.format_exc())
+        MPI.COMM_WORLD.Abort()

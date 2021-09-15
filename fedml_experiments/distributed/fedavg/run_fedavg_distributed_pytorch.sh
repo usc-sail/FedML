@@ -1,26 +1,27 @@
 #!/usr/bin/env bash
 
-CLIENT_NUM=$1
-WORKER_NUM=$2
-MODEL=$3
-DISTRIBUTION=$4
-ROUND=$5
-EPOCH=$6
-BATCH_SIZE=$7
-LR=$8
-DATASET=$9
-DATA_DIR=${10}
-CLIENT_OPTIMIZER=${11}
-CI=${12}
+CLIENT_NUM=118
+WORKER_NUM=32
+MODEL="onedcnnlstm"
+DISTRIBUTION="onedcnnlstm"
+ROUND=200
+EPOCH=5
+BATCH_SIZE=10
+LR=0.01
+DATASET="tiles"
+DATA_DIR="./../../../data"
+CLIENT_OPTIMIZER="sgd"
+CI=0
+output_dir="/data/rash/tiles-motif/expts/onedcnnlstm"
 
 PROCESS_NUM=`expr $WORKER_NUM + 1`
 echo $PROCESS_NUM
 
 hostname > mpi_host_file
 
-mpirun -np $PROCESS_NUM -hostfile ./mpi_host_file python3 ./main_fedavg.py \
+mpirun -np $PROCESS_NUM -hostfile ./mpi_host_file python3.7 ./main_fedavg.py \
   --gpu_mapping_file "gpu_mapping.yaml" \
-  --gpu_mapping_key "mapping_default" \
+  --gpu_mapping_key "mapping_config1_32" \
   --model $MODEL \
   --dataset $DATASET \
   --data_dir $DATA_DIR \
@@ -32,4 +33,5 @@ mpirun -np $PROCESS_NUM -hostfile ./mpi_host_file python3 ./main_fedavg.py \
   --client_optimizer $CLIENT_OPTIMIZER \
   --batch_size $BATCH_SIZE \
   --lr $LR \
-  --ci $CI
+  --ci $CI \
+  --output_dir $output_dir
